@@ -3,11 +3,11 @@ const path = require("path");
 const {
   Client,
   Collection,
-  Events,
   GatewayIntentBits,
   ActivityType,
 } = require("discord.js");
-const { token, logChannelId } = require("./config.json");
+const { token } = require("./config.json");
+const { log, logLevel } = require("./log.js");
 
 const client = new Client({
   intents: [
@@ -21,67 +21,56 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-const foldersPath = path.join(__dirname, "commands");
+const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs
-  .readdirSync(foldersPath)
+  .readdirSync(commandsPath)
   .filter((file) => file.endsWith(".js"));
 
 for (const file of commandFiles) {
-  const filePath = path.join(foldersPath, file);
+  const filePath = path.join(commandsPath, file);
   const command = require(filePath);
   if ("data" in command && "execute" in command) {
     client.commands.set(command.data.name, command);
   } else {
-    console.log(
-      `[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`
+    log(
+      logLevel.warn,
+      `The command at ${filePath} is missing a required "data" or "execute" property.`
     );
   }
 }
 
-client.once(Events.ClientReady, () => {
-  client.user.setActivity("V3 near", {
-    type: ActivityType.Custom,
-  });
-  console.log("Ready!");
-});
+client.buttons = new Collection();
+const buttonsPath = path.join(__dirname, "buttons");
+const buttonFiles = fs
+  .readdirSync(buttonsPath)
+  .filter((file) => file.endsWith(".js"));
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
-
-  try {
-    await command.execute(interaction);
-  } catch (error) {
-    console.error(error);
-    // send error to log channel
-    const logChannel = client.channels.cache.get(logChannelId);
-    await logChannel.send({
-      content: `[ERROR] Une erreur s'est produite lors de l'exécution de la commande \`${interaction.commandName}\`.`,
-      embeds: [
-        {
-          title: "Erreur",
-          description: error.message,
-          color: 0xff0000,
-        },
-      ],
-    });
-
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
-        content:
-          "Une erreur s'est produite lors de l'exécution de cette commande !",
-        ephemeral: true,
-      });
-    } else {
-      await interaction.reply({
-        content:
-          "Une erreur s'est produite lors de l'exécution de cette commande !",
-        ephemeral: true,
-      });
-    }
+for (const file of buttonFiles) {
+  const filePath = path.join(buttonsPath, file);
+  const button = require(filePath);
+  if ("data" in button && "execute" in button) {
+    client.buttons.set(button.data.customId, button);
+  } else {
+    log(
+      logLevel.warn,
+      `The button at ${filePath} is missing a required "data" or "execute" property.`
+    );
   }
-});
+}
+
+const eventsPath = path.join(__dirname, "events");
+const eventFiles = fs
+  .readdirSync(eventsPath)
+  .filter((file) => file.endsWith(".js"));
+
+for (const file of eventFiles) {
+  const filePath = path.join(eventsPath, file);
+  const event = require(filePath);
+  if (event.once) {
+    client.once(event.name, (...args) => event.execute(...args));
+  } else {
+    client.on(event.name, (...args) => event.execute(...args));
+  }
+}
 
 client.login(token);
